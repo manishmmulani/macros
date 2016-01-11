@@ -1,0 +1,354 @@
+Sub autoFillIds(column As String, Optional offset As Integer)
+
+    If IsMissing(offset) Or offset = 0 Then
+        offset = 1
+    End If
+
+    Range(column & "2").Value = offset
+    Range(column & "3").Value = offset + 1
+    'Below is equivalent to Range("C2:C3").Select
+    Range(column & "2:" & column & "3").Select
+    
+    If getLastRow() > 3 Then
+    'Destination should be range
+    'C2:C4 in our case
+    'End(xlDown) => CTRL + DOWN_ARROW
+    'Range("A2").End(xlDown).Row would return 4 (corresponding of row of A4
+        Selection.AutoFill Destination:=Range(column & "2:" & column & getLastRow())
+    End If
+
+End Sub
+
+Function getLastRow() As Integer
+    getLastRow = Range("A2").End(xlDown).Row
+End Function
+
+
+Sub genericSQLGenerator(sheetName As String, idColumn As String, sql As String, sqlColumn As String, Optional offset As Integer)
+    ThisWorkbook.Sheets(sheetName).Activate
+    
+    autoFillIds idColumn, offset
+    
+    'Below is equivalent to Range("D2:D" & lastRow).Value = sql
+    Range(sqlColumn & "2:" & sqlColumn & getLastRow()).Value = sql
+End Sub
+
+Sub categoryWeights()
+    
+    Dim sql As String
+    sql = "=CONCATENATE(""INSERT INTO treasury.brokervote.category_weight VALUES ("","
+    sql = sql + "RC[-1],"","",RC[-2]*100,"")"")"
+    
+    genericSQLGenerator "category weights default", "C", sql, "D"
+
+End Sub
+
+Sub sector()
+    
+    Dim sql As String
+    sql = "=CONCATENATE(""INSERT INTO treasury.brokervote.sector VALUES ("","
+    sql = sql + "RC[-1],"",'"",RC[-2],""')"")"
+    
+    genericSQLGenerator "sector", "B", sql, "C"
+End Sub
+
+Sub region()
+
+    Dim sql As String
+    sql = "=CONCATENATE(""INSERT INTO treasury.brokervote.region VALUES ("","
+    sql = sql + "RC[-1],"",'"",RC[-2],""')"")"
+    
+    genericSQLGenerator "region", "B", sql, "C"
+End Sub
+
+Sub designation()
+
+    Dim sql As String
+    sql = "=CONCATENATE(""INSERT INTO treasury.brokervote.designation VALUES ("","
+    sql = sql + "RC[-1],"",'"",RC[-2],""')"")"
+    
+    genericSQLGenerator "designation", "B", sql, "C"
+End Sub
+
+Sub genericStaffSQLGenerator(sheetName As String, isAnalystOnly As Boolean, Optional offset As Integer)
+    
+    ThisWorkbook.Sheets(sheetName).Activate
+    
+    'Designation vlookup in I column
+    Range("I1").Value = "Designation Id"
+    Range("I2:I" & getLastRow()).Value = "=VLOOKUP(C2,'designation'!A:B,2,FALSE)"
+    
+    'Sector vlookup in J column
+    Range("J1").Value = "Sector Id"
+    Range("J2:J" & getLastRow()).Value = "=VLOOKUP(D2,'sector'!A:B,2,FALSE)"
+    
+    'Region vlookup in K column
+    Range("K1").Value = "Region Id"
+    Range("K2:K" & getLastRow()).Value = "=VLOOKUP(H2,'region'!A:B,2,FALSE)"
+    
+    'Leaving L column for Manager Ids
+    Range("L1").Value = "Manager Id"
+
+    'M should have First Name + Last Name
+    Range("M1").Value = "Full Name"
+    Range("M2:M" & getLastRow()).Value = "=CONCATENATE(A2,"" "",B2)"
+    
+    'Populate Staff table for PMs
+    Range("N1").Value = "Staff Id"
+    Range("O1").Value = "Staff SQL"
+    Range("P1").Value = "Staff Sector Id"
+    Range("Q1").Value = "Staff Sector SQL"
+    
+    Dim sql As String
+    Dim staffSectorSql As String
+    
+    'INSERT INTO treasury.brokervote.staff VALUES
+    'staff_id, username, firstname, lastname, email, code, designation_id, manager_id, region_id, is_active
+    'N,        'F',      'A',       'B',      'G',   'E',  I,              NULL,       K,         1
+    
+    'INSERT INTO treasury.brokervote.staff_sector VALUES
+    'staff_sector_id, staff_id, sector_id
+    'N,               N,        J
+    
+    If isAnalystOnly Then
+        sql = _
+        "=IF(C2 <> ""PM"", CONCATENATE(" + _
+        """INSERT INTO treasury.brokervote.staff VALUES (""," + _
+        "N2, "",""," + _
+        """'"", F2, ""',""," + _
+        """'"", SUBSTITUTE(A2,""'"",""''""), ""',""," + _
+        """'"", SUBSTITUTE(B2,""'"",""''""), ""',""," + _
+        """'"", G2, ""',""," + _
+        """'"", E2, ""',""," + _
+        "I2, "",""," + _
+        "IF(ISNUMBER(L2),L2,""NULL""), "",""," + _
+        "K2, "",""," + _
+        """1)""),"""")"
+        
+        staffSectorSql = _
+        "=IF(C2 <> ""PM""," + _
+        "CONCATENATE(""INSERT INTO treasury.brokervote.staff_sector VALUES (""," + _
+        "P2, "",""," + _
+        "N2, "",""," + _
+        "J2 , "")""" + _
+        "),"""")"
+    
+    Else
+        sql = _
+        "=CONCATENATE(" + _
+        """INSERT INTO treasury.brokervote.staff VALUES (""," + _
+        "N2, "",""," + _
+        """'"", F2, ""',""," + _
+        """'"", SUBSTITUTE(A2,""'"",""''""), ""',""," + _
+        """'"", SUBSTITUTE(B2,""'"",""''""), ""',""," + _
+        """'"", G2, ""',""," + _
+        """'"", E2, ""',""," + _
+        "I2, "",""," + _
+        "IF(ISNUMBER(L2),L2,""NULL""), "",""," + _
+        "K2, "",""," + _
+        """1)"")"
+        
+        staffSectorSql = _
+        "=CONCATENATE(""INSERT INTO treasury.brokervote.staff_sector VALUES (""," + _
+        "P2, "",""," + _
+        "N2, "",""," + _
+        "J2 , "")""" + _
+        ")"
+    End If
+    
+    genericSQLGenerator sheetName, "N", sql, "O", offset
+    genericSQLGenerator sheetName, "P", staffSectorSql, "Q", offset
+End Sub
+
+Sub pm()
+    genericStaffSQLGenerator "PMs", False
+End Sub
+
+Sub user()
+    Dim sheetName As String
+    Dim pmSheetName As String
+    Dim staffIdColumn As String
+    Dim lastPMId As Integer
+    
+    sheetName = "user"
+    pmSheetName = "PMs"
+    staffIdColumn = "N"
+    
+    ThisWorkbook.Sheets(sheetName).Activate
+    
+    'Vlookup for Manager Ids
+    Range("L2:L" & getLastRow()).Value = "=VLOOKUP(E2, '" & pmSheetName & "'!E:N, 10, FALSE)"
+    
+    'Get the last PM Id
+    ThisWorkbook.Sheets(pmSheetName).Activate
+    lastPMId = Cells(getLastRow(), staffIdColumn).Value
+    ThisWorkbook.Sheets(sheetName).Activate
+    
+    'Populate users
+    genericStaffSQLGenerator sheetName, True, lastPMId + 1
+    
+End Sub
+
+Sub broker()
+    Dim sql As String
+    sql = "=CONCATENATE(""INSERT INTO treasury.brokervote.broker VALUES ("","
+    sql = sql + "RC[-1],"",'"",SUBSTITUTE(RC[-3],""'"",""''""),""','"",RC[-2],""')"")"
+    
+    genericSQLGenerator "broker", "C", sql, "D"
+End Sub
+
+Sub eventType()
+    Dim sql As String
+    sql = "=CONCATENATE(""INSERT INTO treasury.brokervote.event_type VALUES ("","
+    sql = sql + "RC[-1],"",'"",RC[-2],""')"")"
+    
+    genericSQLGenerator "event type", "B", sql, "C"
+End Sub
+
+Sub events()
+
+    Dim sheetName As String
+    sheetName = "event"
+    
+    ThisWorkbook.Sheets(sheetName).Activate
+    
+    'Vlookup BrokerCode
+    Range("N1").Value = "Broker Id"
+    Range("N2:N" & getLastRow()).Value = "=VLOOKUP(C2, 'broker'!B:C, 2, FALSE)"
+    
+    'Vlookup PMCode
+    Range("O1").Value = "PM Id"
+    Range("O2:O" & getLastRow()).Value = "=VLOOKUP(F2, 'PMs'!E:N, 10, FALSE)"
+    
+    'Vlookup Event Type
+    Range("P1").Value = "Event Type Id"
+    Range("P2:P" & getLastRow()).Value = "=VLOOKUP(G2, 'event type'!A:B, 2, FALSE)"
+    
+    'Vlookup Sector
+    Range("Q1").Value = "Sector Id"
+    Range("Q2:Q" & getLastRow()).Value = "=VLOOKUP(M2, 'sector'!A:B, 2, FALSE)"
+    
+    'Populate Events
+    Range("R1").Value = "Event Id"
+    Range("S1").Value = "Event SQL"
+    
+    Dim sql As String
+    
+    'INSERT INTO treasury.brokervote.event VALUES
+    'event_id, broker_id, pm_id, event_type_id, rating, company, topic, location_info, date, sector_id
+    'R,        N,         O,     P,             H,      'I',     'J',   'K',           'L',  M
+    
+    sql = _
+    "=IF(ISNUMBER(N2)*ISNUMBER(O2)*ISNUMBER(P2)>0," + _
+     "CONCATENATE(""INSERT INTO treasury.brokervote.event VALUES (""," + _
+     "R2, "",""," + _
+     "N2, "",""," + _
+     "O2, "",""," + _
+     "P2, "",""," + _
+     "H2, "",""," + _
+     """'"", SUBSTITUTE(I2,""'"",""''""), ""'"", "",""," + _
+     """'"", SUBSTITUTE(J2,""'"",""''""), ""'"", "",""," + _
+     """'"", SUBSTITUTE(K2,""'"",""''""), ""'"", "",""," + _
+     """'"", TEXT(L2,""yyyyMMdd hh:mm:ss""), ""'"", "",""," + _
+     "IF(ISNUMBER(M2), M2, ""NULL"")," + _
+     """)""" + _
+     "),"""")"
+
+    genericSQLGenerator sheetName, "R", sql, "S"
+End Sub
+
+
+Sub eventAttendee()
+
+    ThisWorkbook.Sheets("event attendee").Activate
+    
+    'Vlookup event id
+    Range("C1").Value = "Event Id"
+    Range("C2:C" & getLastRow()).Value = "=VLOOKUP(A2, 'event'!A:R, 18, FALSE)"
+    
+    'Vlookup event attendee
+    Range("D1").Value = "Staff Id"
+    Range("D2:D" & getLastRow()).Value = _
+    "=IFERROR(VLOOKUP(B2, 'PMs'!M:N, 2, FALSE), VLOOKUP(B2, 'user'!M:N, 2, FALSE))"
+    
+    'INSERT INTO treasury.brokervote.event_attendee (event_id, attendee_id) VALUES (C2, D2)
+    Range("E1").Value = "Event Attendee SQL"
+    Range("E2:E" & getLastRow()).Value = _
+    "=IF( ISNUMBER(C2)*ISNUMBER(D2)>0 ," + _
+    "CONCATENATE(""INSERT INTO treasury.brokervote.event_attendee (event_id, attendee_id) VALUES ("", C2, "","", D2, "")"")," + _
+    " """" )"
+    
+End Sub
+
+Sub commission()
+    Dim sheetName As String
+    sheetName = "commission"
+    
+    ThisWorkbook.Sheets(sheetName).Activate
+    
+    'Vlookup PM Id
+    Range("E1").Value = "PM Id"
+    Range("E2:E" & getLastRow()).Value = "=VLOOKUP(A2, 'PMs'!E:N, 10, FALSE)"
+    
+    'Vlookup Broker Id
+    Range("F1").Value = "Broker Id"
+    Range("F2:F" & getLastRow()).Value = "=VLOOKUP(B2, 'broker'!B:C, 2, FALSE)"
+    
+    'Populate Commission Data
+    Range("G1").Value = "Commission Data Id"
+    Range("H1").Value = "Commission SQL"
+    
+    Dim sql As String
+    
+    'INSERT INTO treasury.brokervote.commission_data
+    '(commission_data_id, pm_id, broker_id, ytd_commission, ytd_commission_percent)
+    ' G,                  E,     F,         D,              C
+    
+    sql = _
+    "=IF(ISNUMBER(E2) * ISNUMBER(F2) > 0," + _
+    "CONCATENATE(""INSERT INTO treasury.brokervote.commission_data ""," + _
+    " ""(commission_data_id, pm_id, broker_id, ytd_commission, ytd_commission_percent) VALUES (""," + _
+    "G2, "",""," + _
+    "E2, "",""," + _
+    "F2, "",""," + _
+    "D2, "",""," + _
+    "ROUND(C2*100,4) , "")""" + _
+    "), """")"
+    
+    genericSQLGenerator sheetName, "G", sql, "H"
+End Sub
+
+Sub brokerAnalyst()
+
+    Dim sheetName As String
+    sheetName = "broker research analyst"
+    
+    ThisWorkbook.Sheets(sheetName).Activate
+    
+    Range("E1").Value = "Analyst First Name"
+    Range("F1").Value = "Analyst Last Name"
+    
+    Range("E2:E" & getLastRow()).Value = "=LEFT(B2,FIND("" "",B2)-1)"
+    Range("F2:F" & getLastRow()).Value = "=MID(B2,FIND("" "",B2)+1,LEN(B2)-FIND("" "",B2))"
+    
+    'INSERT INTO treasury.brokervote.broker_analyst
+    '(broker_analyst_id, first, last, broker_id, is_active) VALUES
+    'I,                  'E',   'F',  G,
+    'TODO
+    'TODO : Mapping table
+End Sub
+
+Sub GenerateAll()
+    region
+    designation
+    categoryWeights
+    sector
+    pm
+    user
+    broker
+    eventType
+    events
+    eventAttendee
+    commission
+    brokerAnalyst
+End Sub
